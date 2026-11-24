@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Counteer</title>
+<title>counteer</title>
 <style>
   :root {
     --bg: #f6f5f1; --fg: #1c1c1a; --muted: #77776e; --card: #fff; --line: #e1e0d8;
@@ -61,6 +61,7 @@
   .xp .ico { font-size: 30px; }
   .xp .ok { display: block; margin: 0 auto 14px; min-width: 80px; padding: 4px 12px; background: #f4f3ee; border: 1px solid #003c74; border-radius: 3px; font: inherit; color: #000; cursor: pointer; }
   .status { text-align: center; color: var(--muted); font-size: 12px; margin: 10px 0 0; min-height: 16px; }
+  .more { display: block; margin: 10px auto 0; background: none; border: 0; color: var(--muted); font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -90,6 +91,7 @@
   <section class="log">
     <h2>Registro</h2>
     <ul id="log"></ul>
+    <button class="more" id="more" hidden></button>
   </section>
 </main>
 
@@ -147,6 +149,7 @@ for (const [pid, p] of Object.entries(PLAYERS)) {
   input.oninput = () => { names[pid] = input.value.trim() || p.defaultName; save(NAMES_KEY, names); renderLog(); };
 }
 document.getElementById("undo").onclick = undoEvent;
+document.getElementById("more").onclick = () => { showAll = !showAll; renderLog(); };
 
 
 // ---- Sincronizzazione condivisa (Firebase Realtime Database, via REST) ----
@@ -202,10 +205,14 @@ function fmt(t) {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} · ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+let showAll = false;
 function renderLog() {
+  const more = document.getElementById("more");
+  more.hidden = events.length <= 8;
+  more.textContent = showAll ? "Mostra solo le ultime 8" : "Mostra tutto (" + events.length + ")";
   const log = document.getElementById("log");
   log.innerHTML = "";
-  for (const e of events.slice(-8).reverse()) {
+  for (const e of (showAll ? events : events.slice(-8)).slice().reverse()) {
     const pid = e.p;
     const li = document.createElement("li");
     li.innerHTML = `<span class="dot ${pid}"></span><span class="who"></span><span class="when">${fmt(e.t)}</span>`;
