@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sfida sigarette</title>
+<style>
+  :root {
+    --bg: #f6f5f1; --fg: #1c1c1a; --muted: #77776e; --card: #fff; --line: #e1e0d8;
+    --p1: #b4482e; --p1-soft: #f6e4de; --p2: #1f6f78; --p2-soft: #dcecee;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #141413; --fg: #ecebe5; --muted: #8b8b82; --card: #1d1d1b; --line: #2e2e2b;
+      --p1: #e0775b; --p1-soft: #2b1b16; --p2: #5db5bf; --p2-soft: #14262a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px 14px 48px; background: var(--bg); color: var(--fg);
+    font: 16px/1.4 system-ui, sans-serif; display: flex; justify-content: center;
+  }
+  main { width: 100%; max-width: 720px; }
+  .arena { display: grid; gap: 14px; grid-template-columns: 1fr; }
+  @media (min-width: 640px) { .arena { grid-template-columns: 1fr 1fr; } }
+
+  .side { --c: var(--p1); --soft: var(--p1-soft); background: var(--card); border: 1px solid var(--line); border-top: 4px solid var(--c); border-radius: 16px; padding: 14px 16px 16px; }
+  .side.p2 { --c: var(--p2); --soft: var(--p2-soft); }
+  .side.lead { background: var(--soft); }
+
+  .head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .side.p2 .head { flex-direction: row-reverse; }
+  .side.p2 .name { text-align: right; }
+  .char { font-size: 72px; line-height: 1; flex: none; }
+  .name { flex: 1; min-width: 0; background: transparent; border: 0; outline: 0; padding: 2px 0; font: inherit; font-size: 20px; font-weight: 600; color: var(--c); }
+
+  .btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .btn { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 14px 12px; text-align: left; color: inherit; font: inherit; cursor: pointer; touch-action: manipulation; }
+  .btn:active { background: var(--c); border-color: var(--c); color: #fff; }
+  .btn .t { display: block; font-size: 13px; opacity: .7; }
+  .btn .c { display: block; font-size: 40px; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; }
+
+  .undo { display: block; margin: 16px auto 0; width: 100%; max-width: 280px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--fg); font: inherit; font-size: 15px; cursor: pointer; }
+  .undo:disabled { opacity: .35; cursor: default; }
+
+  .log { margin-top: 24px; }
+  .log h2 { font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
+  .log ul { list-style: none; margin: 0; padding: 0; }
+  .log li { display: flex; align-items: center; gap: 10px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 14px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .dot.p1 { background: var(--p1); } .dot.p2 { background: var(--p2); }
+  .who { flex: 1; }
+  .when { color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .xp { display: none; position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 10; width: min(300px, 86vw);
+    background: #ece9d8; border: 2px solid #0831d9; border-radius: 8px 8px 0 0; box-shadow: 4px 4px 0 rgba(0,0,0,.35); font: 14px Tahoma, Verdana, sans-serif; color: #000; }
+  .xp.on { display: block; }
+  .xp .bar { background: linear-gradient(#3a7bf0, #0a4fd8); color: #fff; font-weight: 700; padding: 4px 6px 4px 10px; display: flex; justify-content: space-between; align-items: center; border-radius: 6px 6px 0 0; }
+  .xp .x { background: #d9532c; color: #fff; border: 1px solid #fff; border-radius: 3px; width: 22px; height: 22px; font-weight: 700; line-height: 1; cursor: pointer; }
+  .xp .msg { display: flex; align-items: center; gap: 12px; padding: 18px 14px; }
+  .xp .ico { font-size: 30px; }
+  .xp .ok { display: block; margin: 0 auto 14px; min-width: 80px; padding: 4px 12px; background: #f4f3ee; border: 1px solid #003c74; border-radius: 3px; font: inherit; color: #000; cursor: pointer; }
+  .status { text-align: center; color: var(--muted); font-size: 12px; margin: 10px 0 0; min-height: 16px; }
+  .linkbtn { display: block; margin: 6px auto 0; background: none; border: 0; color: var(--muted); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
+</style>
+</head>
+<body>
+<main>
+  <div class="arena">
+
+    <section class="side p1" id="side-p1">
+      <div class="head">
+        <span class="char" aria-hidden="true">🐉</span>
+        <input class="name" id="name-p1" maxlength="20" aria-label="Nome giocatore 1">
+      </div>
+      <div class="btns" id="btns-p1"></div>
+    </section>
+
+    <section class="side p2" id="side-p2">
+      <div class="head">
+        <span class="char" aria-hidden="true">🦉</span>
+        <input class="name" id="name-p2" maxlength="20" aria-label="Nome giocatore 2">
+      </div>
+      <div class="btns" id="btns-p2"></div>
+    </section>
+  </div>
+
+  <button class="undo" id="undo">↶ Annulla ultima</button>
+  <p class="status" id="status"></p>
+  <button class="linkbtn" id="copylink" hidden>Copia il link da mandare all'altro</button>
+
+  <section class="log">
+    <h2>Registro</h2>
+    <ul id="log"></ul>
+  </section>
+</main>
+
+<div class="xp" id="xp" role="alertdialog">
+  <div class="bar"><span>Attenzione</span><button class="x" id="xp-x" aria-label="Chiudi">×</button></div>
+  <div class="msg"><span class="ico">⚠️</span><span id="xp-msg"></span></div>
+  <button class="ok" id="xp-ok">OK</button>
+</div>
+<script>
+const PLAYERS = {
+  p1: { cats: ["A", "C"], defaultName: "Samot" },
+  p2: { cats: ["B", "D"], defaultName: "Olmio" },
+};
+const CAT_TO_PLAYER = { A: "p1", C: "p1", B: "p2", D: "p2" };
+const EVENTS_KEY = "contatore-sigarette-v1";
+const NAMES_KEY  = "contatore-sigarette-nomi-v1";
+
+// Livello dati: per la versione condivisa si sostituiscono solo queste due funzioni.
+function load(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
+function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
+
+let events = load(EVENTS_KEY, []);
+let names  = load(NAMES_KEY, {});
+const nameOf = pid => names[pid] || PLAYERS[pid].defaultName;
+
+
+const POPUPS = ["ahi ahi", "se non bestemmio guarda"];
+const POPUP_CHANCE = 0.15;
+const xp = document.getElementById("xp");
+const closeXp = () => xp.classList.remove("on");
+document.getElementById("xp-ok").onclick = closeXp;
+document.getElementById("xp-x").onclick = closeXp;
+function maybePopup() {
+  if (Math.random() >= POPUP_CHANCE) return;
+  document.getElementById("xp-msg").textContent = POPUPS[Math.floor(Math.random() * POPUPS.length)];
+  xp.classList.add("on");
+}
+
+const countEls = {};
+for (const [pid, p] of Object.entries(PLAYERS)) {
+  const box = document.getElementById("btns-" + pid);
+  for (const cat of p.cats) {
+    const b = document.createElement("button");
+    b.className = "btn";
+    b.innerHTML = `<span class="t">Sigarette ${cat}</span><span class="c">0</span>`;
+    b.onclick = () => { change(es => [...es, { c: cat, t: Date.now() }]); maybePopup(); };
+    box.appendChild(b);
+    countEls[cat] = b.querySelector(".c");
+  }
+  const input = document.getElementById("name-" + pid);
+  input.value = nameOf(pid);
+  input.oninput = () => { names[pid] = input.value.trim() || p.defaultName; save(NAMES_KEY, names); renderLog(); };
+}
+document.getElementById("undo").onclick = () => change(es => es.slice(0, -1));
+
+
+// ---- Sincronizzazione condivisa (jsonblob.com, nessun account) ----
+// L'indirizzo dell'archivio sta nel link dopo il "#": chi apre lo stesso link vede gli stessi dati.
+const API = "https://jsonblob.com/api/jsonBlob";
+const HDR = { "Content-Type": "application/json", "Accept": "application/json" };
+let blobId = location.hash.slice(1) || load("contatore-blob-id", null);
+let chain = Promise.resolve();
+
+function setStatus(ok) {
+  document.getElementById("status").textContent = ok ? "Sincronizzato" : "Offline: i dati sono solo su questo dispositivo";
+  document.getElementById("copylink").hidden = !blobId;
+}
+async function remoteGet() {
+  const r = await fetch(`${API}/${blobId}`, { headers: HDR, cache: "no-store" });
+  if (!r.ok) throw new Error("get");
+  const d = await r.json();
+  return Array.isArray(d.events) ? d.events : [];
+}
+async function remotePut(ev) {
+  const r = await fetch(`${API}/${blobId}`, { method: "PUT", headers: HDR, body: JSON.stringify({ events: ev }) });
+  if (!r.ok) throw new Error("put");
+}
+async function remoteCreate(ev) {
+  const r = await fetch(API, { method: "POST", headers: HDR, body: JSON.stringify({ events: ev }) });
+  const loc = r.headers.get("Location");
+  if (!r.ok || !loc) throw new Error("create");
+  blobId = loc.split("/").pop();
+  save("contatore-blob-id", blobId);
+  history.replaceState(null, "", "#" + blobId);
+}
+
+// Applica subito la modifica in locale, poi la ripete sul dato condiviso più recente.
+function change(fn) {
+  events = fn(events);
+  save(EVENTS_KEY, events);
+  render();
+  chain = chain.then(async () => {
+    try {
+      if (!blobId) await remoteCreate(events);
+      else { const next = fn(await remoteGet()); await remotePut(next); events = next; save(EVENTS_KEY, events); render(); }
+      setStatus(true);
+    } catch { setStatus(false); }
+  });
+}
+
+let lastSeen = "";
+async function sync() {
+  try {
+    if (!blobId) { setStatus(false); return; }
+    const ev = await remoteGet();
+    const sig = JSON.stringify(ev);
+    if (sig !== JSON.stringify(events)) { events = ev; save(EVENTS_KEY, events); render(); }
+    setStatus(true);
+  } catch { setStatus(false); }
+}
+setInterval(() => { if (!document.hidden) chain = chain.then(sync); }, 5000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) chain = chain.then(sync); });
+document.getElementById("copylink").onclick = async () => {
+  try { await navigator.clipboard.writeText(location.href); document.getElementById("status").textContent = "Link copiato"; } catch { prompt("Copia questo link:", location.href); }
+};
+
+const pad = n => String(n).padStart(2, "0");
+function fmt(t) {
+  const d = new Date(t);
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} · ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function renderLog() {
+  const log = document.getElementById("log");
+  log.innerHTML = "";
+  for (const e of events.slice(-8).reverse()) {
+    const pid = CAT_TO_PLAYER[e.c];
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="dot ${pid}"></span><span class="who"></span><span class="when">${fmt(e.t)}</span>`;
+    li.querySelector(".who").textContent = `${nameOf(pid)} · ${e.c}`;
+    log.appendChild(li);
+  }
+}
+
+function render() {
+  const cat = { A: 0, B: 0, C: 0, D: 0 }, tot = { p1: 0, p2: 0 };
+  for (const e of events) { const pid = CAT_TO_PLAYER[e.c]; if (pid) { cat[e.c]++; tot[pid]++; } }
+  for (const c in cat) countEls[c].textContent = cat[c];
+  document.getElementById("undo").disabled = events.length === 0;
+  document.getElementById("side-p1").classList.toggle("lead", events.length > 0 && tot.p1 < tot.p2);
+  document.getElementById("side-p2").classList.toggle("lead", events.length > 0 && tot.p2 < tot.p1);
+  renderLog();
+}
+render();
+chain = chain.then(async () => { if (!blobId) { setStatus(false); document.getElementById('status').textContent = 'Premi un pulsante per creare l\'archivio condiviso'; } else await sync(); });
+</script>
+</body>
+</html>
