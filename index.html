@@ -42,6 +42,7 @@
 
   .undo { display: block; margin: 16px auto 0; width: 100%; max-width: 280px; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card); color: var(--fg); font: inherit; font-size: 15px; cursor: pointer; }
   .undo:disabled { opacity: .35; cursor: default; }
+  .undo .sub { font-size: 12px; opacity: .7; }
 
   .log { margin-top: 24px; }
   .log h2 { font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 0 6px; }
@@ -85,7 +86,7 @@
     </section>
   </div>
 
-  <button class="undo" id="undo">↶ annulla ultima (solo per misclick eh)</button>
+  <button class="undo" id="undo">↶ annulla ultima<br><span class="sub">(solo per misclick eh)</span></button>
   <p class="status" id="status"></p>
 
   <section class="log">
