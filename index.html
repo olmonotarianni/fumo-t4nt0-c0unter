@@ -61,7 +61,6 @@
   .xp .ico { font-size: 30px; }
   .xp .ok { display: block; margin: 0 auto 14px; min-width: 80px; padding: 4px 12px; background: #f4f3ee; border: 1px solid #003c74; border-radius: 3px; font: inherit; color: #000; cursor: pointer; }
   .status { text-align: center; color: var(--muted); font-size: 12px; margin: 10px 0 0; min-height: 16px; }
-  .linkbtn { display: block; margin: 6px auto 0; background: none; border: 0; color: var(--muted); font: inherit; font-size: 12px; text-decoration: underline; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -87,7 +86,6 @@
 
   <button class="undo" id="undo">↶ Annulla ultima</button>
   <p class="status" id="status"></p>
-  <button class="linkbtn" id="copylink" hidden>Copia il link da mandare all'altro</button>
 
   <section class="log">
     <h2>Registro</h2>
@@ -102,8 +100,8 @@
 </div>
 <script>
 const PLAYERS = {
-  p1: { cats: ["A", "B"], defaultName: "Samoht" },
-  p2: { cats: ["A", "B"], defaultName: "Olmio" },
+  p1: { cats: ["A", "B"], defaultName: "samoht" },
+  p2: { cats: ["A", "B"], defaultName: "olmio" },
 };
 // Ogni registrazione ora porta con sé il giocatore: { p: "p1", c: "A", t: ... }
 // I vecchi dati (solo lettera) vengono convertiti: A,C -> p1 (A,B); B,D -> p2 (A,B).
@@ -140,7 +138,7 @@ for (const [pid, p] of Object.entries(PLAYERS)) {
     const b = document.createElement("button");
     b.className = "btn";
     b.innerHTML = `<span class="t">Sigarette ${cat}</span><span class="c">0</span>`;
-    b.onclick = () => { change(es => [...es, { p: pid, c: cat, t: Date.now() }]); maybePopup(); };
+    b.onclick = () => { addEvent(pid, cat); maybePopup(); };
     box.appendChild(b);
     countEls[pid + cat] = b.querySelector(".c");
   }
@@ -148,74 +146,55 @@ for (const [pid, p] of Object.entries(PLAYERS)) {
   input.value = nameOf(pid);
   input.oninput = () => { names[pid] = input.value.trim() || p.defaultName; save(NAMES_KEY, names); renderLog(); };
 }
-document.getElementById("undo").onclick = () => change(es => es.slice(0, -1));
+document.getElementById("undo").onclick = undoEvent;
 
 
-// ---- Sincronizzazione condivisa (jsonblob.com, nessun account) ----
-// L'indirizzo dell'archivio sta nel link dopo il "#": chi apre lo stesso link vede gli stessi dati.
-const API = "https://jsonblob.com/api/jsonBlob";
-const HDR = { "Content-Type": "application/json", "Accept": "application/json" };
-let blobId = location.hash.slice(1) || load("contatore-blob-id", null);
+// ---- Sincronizzazione condivisa (Firebase Realtime Database, via REST) ----
+// Incolla qui l'indirizzo del database, senza "/" finale. Esempio:
+// https://nome-progetto-default-rtdb.europe-west1.firebasedatabase.app
+const DB_URL = "https://counteer-3fc6b-default-rtdb.europe-west1.firebasedatabase.app";
+
 let chain = Promise.resolve();
-
-function why(e) {
-  if (e && e.message === "create-header") return "il servizio risponde ma non mostra l'indirizzo";
-  if (e && /^(get|put|create) /.test(e.message)) return "errore " + e.message;
-  return "la richiesta è bloccata dal browser o dalla rete";
-}
+const statusEl = document.getElementById("status");
 function setStatus(ok, err) {
-  document.getElementById("status").textContent = ok ? "Sincronizzato" : "Offline (" + why(err) + "): i dati sono solo su questo dispositivo";
-  document.getElementById("copylink").hidden = !blobId;
+  if (!DB_URL) { statusEl.textContent = "Archivio condiviso non configurato: i dati sono solo su questo dispositivo"; return; }
+  statusEl.textContent = ok ? "Sincronizzato" : "Offline (" + (err && /^http/.test(err.message) ? "errore " + err.message.slice(5) : "richiesta bloccata o rete assente") + "): i dati sono solo su questo dispositivo";
 }
-async function remoteGet() {
-  const r = await fetch(`${API}/${blobId}`, { headers: HDR, cache: "no-store" });
-  if (!r.ok) throw new Error("get " + r.status);
-  const d = await r.json();
-  return Array.isArray(d.events) ? normalize(d.events) : [];
+async function api(path, opts) {
+  const r = await fetch(DB_URL + path, opts);
+  if (!r.ok) throw new Error("http " + r.status);
+  return r.json();
 }
-async function remotePut(ev) {
-  const r = await fetch(`${API}/${blobId}`, { method: "PUT", headers: HDR, body: JSON.stringify({ events: ev }) });
-  if (!r.ok) throw new Error("put " + r.status);
+async function pull() {
+  const d = await api("/events.json", { cache: "no-store" });
+  const list = Object.entries(d || {}).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([id, v]) => ({ ...v, id }));
+  const next = normalize(list);
+  if (JSON.stringify(next) !== JSON.stringify(events)) { events = next; save(EVENTS_KEY, events); render(); }
 }
-async function remoteCreate(ev) {
-  const r = await fetch(API, { method: "POST", headers: HDR, body: JSON.stringify({ events: ev }) });
-  if (!r.ok) throw new Error("create " + r.status);
-  const loc = r.headers.get("Location");
-  if (!loc) throw new Error("create-header");
-  blobId = loc.split("/").pop();
-  save("contatore-blob-id", blobId);
-  history.replaceState(null, "", "#" + blobId);
-}
-
-// Applica subito la modifica in locale, poi la ripete sul dato condiviso più recente.
-function change(fn) {
-  events = fn(events);
-  save(EVENTS_KEY, events);
-  render();
+function remote(task) {
+  if (!DB_URL) { setStatus(false); return; }
   chain = chain.then(async () => {
-    try {
-      if (!blobId) await remoteCreate(events);
-      else { const next = fn(await remoteGet()); await remotePut(next); events = next; save(EVENTS_KEY, events); render(); }
-      setStatus(true);
-    } catch (e) { setStatus(false, e); }
+    try { await task(); await pull(); setStatus(true); } catch (e) { setStatus(false, e); }
   });
 }
 
-let lastSeen = "";
-async function sync() {
-  try {
-    if (!blobId) { setStatus(false); return; }
-    const ev = await remoteGet();
-    const sig = JSON.stringify(ev);
-    if (sig !== JSON.stringify(events)) { events = ev; save(EVENTS_KEY, events); render(); }
-    setStatus(true);
-  } catch (e) { setStatus(false, e); }
+function addEvent(p, c) {
+  const ev = { p, c, t: Date.now() };
+  events = [...events, ev]; save(EVENTS_KEY, events); render();
+  remote(() => api("/events.json", { method: "POST", body: JSON.stringify(ev) }));
 }
-setInterval(() => { if (!document.hidden) chain = chain.then(sync); }, 5000);
-document.addEventListener("visibilitychange", () => { if (!document.hidden) chain = chain.then(sync); });
-document.getElementById("copylink").onclick = async () => {
-  try { await navigator.clipboard.writeText(location.href); document.getElementById("status").textContent = "Link copiato"; } catch { prompt("Copia questo link:", location.href); }
-};
+function undoEvent() {
+  if (!events.length) return;
+  events = events.slice(0, -1); save(EVENTS_KEY, events); render();
+  remote(async () => {
+    const d = await api('/events.json?orderBy="$key"&limitToLast=1');
+    const key = Object.keys(d || {})[0];
+    if (key) await api("/events/" + key + ".json", { method: "DELETE" });
+  });
+}
+
+setInterval(() => { if (!document.hidden) remote(() => Promise.resolve()); }, 5000);
+document.addEventListener("visibilitychange", () => { if (!document.hidden) remote(() => Promise.resolve()); });
 
 const pad = n => String(n).padStart(2, "0");
 function fmt(t) {
@@ -245,7 +224,8 @@ function render() {
   renderLog();
 }
 render();
-chain = chain.then(async () => { if (!blobId) { setStatus(false); document.getElementById('status').textContent = 'Premi un pulsante per creare l\'archivio condiviso'; } else await sync(); });
+setStatus(true);
+remote(() => Promise.resolve());
 </script>
 </body>
 </html>
