@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Sfida sigarette</title>
+<title>Counteer</title>
 <style>
   :root {
     --bg: #f6f5f1; --fg: #1c1c1a; --muted: #77776e; --card: #fff; --line: #e1e0d8;
@@ -158,24 +158,30 @@ const HDR = { "Content-Type": "application/json", "Accept": "application/json" }
 let blobId = location.hash.slice(1) || load("contatore-blob-id", null);
 let chain = Promise.resolve();
 
-function setStatus(ok) {
-  document.getElementById("status").textContent = ok ? "Sincronizzato" : "Offline: i dati sono solo su questo dispositivo";
+function why(e) {
+  if (e && e.message === "create-header") return "il servizio risponde ma non mostra l'indirizzo";
+  if (e && /^(get|put|create) /.test(e.message)) return "errore " + e.message;
+  return "la richiesta è bloccata dal browser o dalla rete";
+}
+function setStatus(ok, err) {
+  document.getElementById("status").textContent = ok ? "Sincronizzato" : "Offline (" + why(err) + "): i dati sono solo su questo dispositivo";
   document.getElementById("copylink").hidden = !blobId;
 }
 async function remoteGet() {
   const r = await fetch(`${API}/${blobId}`, { headers: HDR, cache: "no-store" });
-  if (!r.ok) throw new Error("get");
+  if (!r.ok) throw new Error("get " + r.status);
   const d = await r.json();
   return Array.isArray(d.events) ? normalize(d.events) : [];
 }
 async function remotePut(ev) {
   const r = await fetch(`${API}/${blobId}`, { method: "PUT", headers: HDR, body: JSON.stringify({ events: ev }) });
-  if (!r.ok) throw new Error("put");
+  if (!r.ok) throw new Error("put " + r.status);
 }
 async function remoteCreate(ev) {
   const r = await fetch(API, { method: "POST", headers: HDR, body: JSON.stringify({ events: ev }) });
+  if (!r.ok) throw new Error("create " + r.status);
   const loc = r.headers.get("Location");
-  if (!r.ok || !loc) throw new Error("create");
+  if (!loc) throw new Error("create-header");
   blobId = loc.split("/").pop();
   save("contatore-blob-id", blobId);
   history.replaceState(null, "", "#" + blobId);
@@ -191,7 +197,7 @@ function change(fn) {
       if (!blobId) await remoteCreate(events);
       else { const next = fn(await remoteGet()); await remotePut(next); events = next; save(EVENTS_KEY, events); render(); }
       setStatus(true);
-    } catch { setStatus(false); }
+    } catch (e) { setStatus(false, e); }
   });
 }
 
@@ -203,7 +209,7 @@ async function sync() {
     const sig = JSON.stringify(ev);
     if (sig !== JSON.stringify(events)) { events = ev; save(EVENTS_KEY, events); render(); }
     setStatus(true);
-  } catch { setStatus(false); }
+  } catch (e) { setStatus(false, e); }
 }
 setInterval(() => { if (!document.hidden) chain = chain.then(sync); }, 5000);
 document.addEventListener("visibilitychange", () => { if (!document.hidden) chain = chain.then(sync); });
