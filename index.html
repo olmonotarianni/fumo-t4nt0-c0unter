@@ -102,10 +102,13 @@
 </div>
 <script>
 const PLAYERS = {
-  p1: { cats: ["A", "C"], defaultName: "Samot" },
-  p2: { cats: ["B", "D"], defaultName: "Olmio" },
+  p1: { cats: ["A", "B"], defaultName: "Samoht" },
+  p2: { cats: ["A", "B"], defaultName: "Olmio" },
 };
-const CAT_TO_PLAYER = { A: "p1", C: "p1", B: "p2", D: "p2" };
+// Ogni registrazione ora porta con sé il giocatore: { p: "p1", c: "A", t: ... }
+// I vecchi dati (solo lettera) vengono convertiti: A,C -> p1 (A,B); B,D -> p2 (A,B).
+const LEGACY = { A: ["p1", "A"], C: ["p1", "B"], B: ["p2", "A"], D: ["p2", "B"] };
+const normalize = es => es.map(e => e.p ? e : { p: LEGACY[e.c]?.[0], c: LEGACY[e.c]?.[1], t: e.t }).filter(e => e.p);
 const EVENTS_KEY = "contatore-sigarette-v1";
 const NAMES_KEY  = "contatore-sigarette-nomi-v1";
 
@@ -113,7 +116,7 @@ const NAMES_KEY  = "contatore-sigarette-nomi-v1";
 function load(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } }
 function save(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
 
-let events = load(EVENTS_KEY, []);
+let events = normalize(load(EVENTS_KEY, []));
 let names  = load(NAMES_KEY, {});
 const nameOf = pid => names[pid] || PLAYERS[pid].defaultName;
 
@@ -130,16 +133,16 @@ function maybePopup() {
   xp.classList.add("on");
 }
 
-const countEls = {};
+const countEls = {};   // chiave: "p1A", "p2B", ...
 for (const [pid, p] of Object.entries(PLAYERS)) {
   const box = document.getElementById("btns-" + pid);
   for (const cat of p.cats) {
     const b = document.createElement("button");
     b.className = "btn";
     b.innerHTML = `<span class="t">Sigarette ${cat}</span><span class="c">0</span>`;
-    b.onclick = () => { change(es => [...es, { c: cat, t: Date.now() }]); maybePopup(); };
+    b.onclick = () => { change(es => [...es, { p: pid, c: cat, t: Date.now() }]); maybePopup(); };
     box.appendChild(b);
-    countEls[cat] = b.querySelector(".c");
+    countEls[pid + cat] = b.querySelector(".c");
   }
   const input = document.getElementById("name-" + pid);
   input.value = nameOf(pid);
@@ -163,7 +166,7 @@ async function remoteGet() {
   const r = await fetch(`${API}/${blobId}`, { headers: HDR, cache: "no-store" });
   if (!r.ok) throw new Error("get");
   const d = await r.json();
-  return Array.isArray(d.events) ? d.events : [];
+  return Array.isArray(d.events) ? normalize(d.events) : [];
 }
 async function remotePut(ev) {
   const r = await fetch(`${API}/${blobId}`, { method: "PUT", headers: HDR, body: JSON.stringify({ events: ev }) });
@@ -218,7 +221,7 @@ function renderLog() {
   const log = document.getElementById("log");
   log.innerHTML = "";
   for (const e of events.slice(-8).reverse()) {
-    const pid = CAT_TO_PLAYER[e.c];
+    const pid = e.p;
     const li = document.createElement("li");
     li.innerHTML = `<span class="dot ${pid}"></span><span class="who"></span><span class="when">${fmt(e.t)}</span>`;
     li.querySelector(".who").textContent = `${nameOf(pid)} · ${e.c}`;
@@ -227,8 +230,8 @@ function renderLog() {
 }
 
 function render() {
-  const cat = { A: 0, B: 0, C: 0, D: 0 }, tot = { p1: 0, p2: 0 };
-  for (const e of events) { const pid = CAT_TO_PLAYER[e.c]; if (pid) { cat[e.c]++; tot[pid]++; } }
+  const cat = { p1A: 0, p1B: 0, p2A: 0, p2B: 0 }, tot = { p1: 0, p2: 0 };
+  for (const e of events) { cat[e.p + e.c]++; tot[e.p]++; }
   for (const c in cat) countEls[c].textContent = cat[c];
   document.getElementById("undo").disabled = events.length === 0;
   document.getElementById("side-p1").classList.toggle("lead", events.length > 0 && tot.p1 < tot.p2);
