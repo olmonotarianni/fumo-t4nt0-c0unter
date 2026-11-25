@@ -64,6 +64,27 @@
   .status { text-align: center; color: var(--muted); font-size: 12px; margin: 10px 0 0; min-height: 16px; }
   .more { display: block; margin: 10px auto 0; background: none; border: 0; color: var(--muted); font: inherit; font-size: 13px; text-decoration: underline; cursor: pointer; }
   .tag { margin: 36px 0 0 auto; width: max-content; max-width: 70%; transform: rotate(-3deg); font: 11px/1.5 ui-monospace, Menlo, Consolas, monospace; color: var(--muted); opacity: .55; letter-spacing: .04em; text-align: right; text-shadow: 1px 1px 0 var(--line); user-select: none; }
+
+  .dash { margin-top: 28px; }
+  .dash h2 { font-size: 12px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); margin-bottom: 10px; }
+  .legend .it { display: inline-flex; align-items: center; gap: 5px; }
+  .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .sw.p1 { background: var(--p1); } .sw.p2 { background: var(--p2); }
+  .sw.full { background: var(--fg); } .sw.light { background: var(--fg); opacity: .35; }
+  .chart { display: flex; }
+  .day { flex: 1; min-width: 0; padding: 0 3px; }
+  .pair { height: 124px; display: flex; align-items: flex-end; justify-content: center; gap: 4px; border-bottom: 1px solid var(--line); }
+  .col { width: 100%; max-width: 20px; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+  .col .tv { font-size: 11px; color: var(--muted); line-height: 1.6; font-variant-numeric: tabular-nums; }
+  .stack { width: 100%; display: flex; flex-direction: column-reverse; gap: 2px; }
+  .seg { width: 100%; }
+  .seg.top { border-radius: 4px 4px 0 0; }
+  .p1 .seg { background: var(--p1); } .p2 .seg { background: var(--p2); }
+  .seg.b { opacity: .4; }
+  .col.sel .stack { outline: 1px solid var(--fg); outline-offset: 2px; border-radius: 4px 4px 0 0; }
+  .dl { text-align: center; font-size: 11px; color: var(--muted); margin-top: 6px; white-space: nowrap; }
+  .dinfo { min-height: 18px; font-size: 13px; color: var(--fg); margin: 10px 0 0; text-align: center; font-variant-numeric: tabular-nums; }
 </style>
 </head>
 <body>
@@ -95,7 +116,19 @@
     <ul id="log"></ul>
     <button class="more" id="more" hidden></button>
   </section>
-  <p class="tag">Ⓐ LA CONTA dall'ora zero eh!<br>dal 23/11 alle 23:30 eh!</p>
+
+  <section class="dash" id="dash" hidden>
+    <h2>Giorno per giorno</h2>
+    <div class="legend">
+      <span class="it"><i class="sw p1"></i><span id="lg-p1"></span></span>
+      <span class="it"><i class="sw p2"></i><span id="lg-p2"></span></span>
+      <span class="it"><i class="sw full"></i>A</span>
+      <span class="it"><i class="sw light"></i>B</span>
+    </div>
+    <div class="chart" id="chart"></div>
+    <p class="dinfo" id="dinfo"></p>
+  </section>
+  <p class="tag">Ⓐ LA CONTA dall'ora zero eh!<br>dal 23/11 alle 23:30 eh!<br><span id="elapsed"></span></p>
 </main>
 
 <div class="xp" id="xp" role="alertdialog">
@@ -149,7 +182,7 @@ for (const [pid, p] of Object.entries(PLAYERS)) {
   }
   const input = document.getElementById("name-" + pid);
   input.value = nameOf(pid);
-  input.oninput = () => { names[pid] = input.value.trim() || p.defaultName; save(NAMES_KEY, names); renderLog(); };
+  input.oninput = () => { names[pid] = input.value.trim() || p.defaultName; save(NAMES_KEY, names); renderLog(); renderDash(); };
 }
 document.getElementById("undo").onclick = undoEvent;
 document.getElementById("more").onclick = () => { showAll = !showAll; renderLog(); };
@@ -208,6 +241,58 @@ function fmt(t) {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} · ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+let dashSel = null;   // { k: "2026-11-25", p: "p1" }
+function renderDash() {
+  const box = document.getElementById("dash");
+  if (!events.length) { box.hidden = true; return; }
+  box.hidden = false;
+  document.getElementById("lg-p1").textContent = nameOf("p1");
+  document.getElementById("lg-p2").textContent = nameOf("p2");
+
+  const key = d => d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate());
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const first = new Date(Math.min(...events.map(e => e.t))); first.setHours(0, 0, 0, 0);
+  let start = new Date(today); start.setDate(start.getDate() - 6);
+  if (first > start) start = first;
+  const days = [];
+  for (const d = new Date(start); d <= today; d.setDate(d.getDate() + 1)) days.push(new Date(d));
+
+  const data = {};
+  for (const d of days) data[key(d)] = { p1: { A: 0, B: 0 }, p2: { A: 0, B: 0 } };
+  for (const e of events) { const k = key(new Date(e.t)); if (data[k]) data[k][e.p][e.c]++; }
+  const tot = v => v.A + v.B;
+  const max = Math.max(1, ...days.flatMap(d => ["p1", "p2"].map(p => tot(data[key(d)][p]))));
+  const unit = 96 / max;   // px per sigaretta
+
+  const label = d => d.toDateString() === today.toDateString() ? "oggi" : d.toLocaleDateString("it-IT", { weekday: "short" }) + " " + d.getDate();
+  const chart = document.getElementById("chart");
+  chart.innerHTML = "";
+  for (const d of days) {
+    const k = key(d), day = document.createElement("div");
+    day.className = "day";
+    let cols = "";
+    for (const p of ["p1", "p2"]) {
+      const v = data[k][p], t = tot(v);
+      const seg = (n, cls, top) => n ? `<div class="seg ${cls}${top ? " top" : ""}" style="height:${Math.max(3, Math.round(n * unit))}px"></div>` : "";
+      cols += `<div class="col ${p}${dashSel && dashSel.k === k && dashSel.p === p ? " sel" : ""}" data-k="${k}" data-p="${p}">` +
+        `<span class="tv">${t || ""}</span><div class="stack">${seg(v.A, "a", !v.B)}${seg(v.B, "b", true)}</div></div>`;
+    }
+    day.innerHTML = `<div class="pair">${cols}</div><div class="dl">${label(d)}</div>`;
+    chart.appendChild(day);
+  }
+  chart.onclick = ev => {
+    const c = ev.target.closest(".col");
+    if (!c) return;
+    dashSel = { k: c.dataset.k, p: c.dataset.p };
+    renderDash();
+  };
+  const info = document.getElementById("dinfo");
+  if (dashSel && data[dashSel.k]) {
+    const v = data[dashSel.k][dashSel.p], [y, m, dd] = dashSel.k.split("-");
+    info.textContent = `${nameOf(dashSel.p)} · ${dd}/${m}: A ${v.A} · B ${v.B} · totale ${tot(v)}`;
+  } else info.textContent = "";
+}
+
 let showAll = false;
 function renderLog() {
   const more = document.getElementById("more");
@@ -232,7 +317,19 @@ function render() {
   document.getElementById("side-p1").classList.toggle("lead", events.length > 0 && tot.p1 < tot.p2);
   document.getElementById("side-p2").classList.toggle("lead", events.length > 0 && tot.p2 < tot.p1);
   renderLog();
+  renderDash();
 }
+const ZERO = new Date(2026, 10, 23, 23, 30);   // ora zero: 23/11/2026 alle 23:30
+function renderElapsed() {
+  const h = Math.floor((Date.now() - ZERO) / 3600000);
+  if (h < 0) { document.getElementById("elapsed").textContent = ""; return; }
+  const d = Math.floor(h / 24), hh = h % 24;
+  document.getElementById("elapsed").textContent =
+    `passati ${d} ${d === 1 ? "giorno" : "giorni"} e ${hh} ${hh === 1 ? "ora" : "ore"} eh!`;
+}
+renderElapsed();
+setInterval(renderElapsed, 60000);
+
 render();
 setStatus(true);
 remote(() => Promise.resolve());
